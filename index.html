@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="format-detection" content="telephone=no">
+    <title></title>
+</head>
+<script>
+    var SEPHORA_JSINVOKE = (function () {
+        // 私有方法 
+        /**
+         * @function  判断是否在浏览器环境中
+         */
+        var verify_getClient = function () {
+            return typeof window !== 'undefined' && window.document;
+        };
+        /**
+         * @function  判断传入的参数是否为空或者为空对象
+         */
+        var verify_typeObject = function (obj) {
+            if (!obj || JSON.stringify(obj) == "{}") return false;
+            return true;
+        };
+
+        var verify_typeFunction = function (obj) {
+            if (!obj || typeof obj === ['function']) return false;
+            return true;
+        };
+        /**
+         * @function  报错提示
+         */
+        var system_warning = function (message) {
+            if (typeof console !== 'undefined' && typeof console.error == 'function') {
+                console.error(message);
+            };
+            try {
+                throw new Error(message);
+            } catch (e) { };
+        };
+        /**
+         * @function  动态的加载外部的JS
+         */
+        var tools_loadScript = function (w, d, s, u, c) {
+            var f = d.getElementsByTagName(s)[0];
+            var j = d.createElement(s);
+            j.async = true;
+            j.src = u;
+            f.parentNode.insertBefore(j, f);
+            j.onerror = function () {
+                system_warning('Wechat JSSDK failed to load ');
+                c && c(false);
+            };
+            j.onload = function () {
+                c && c(true);
+            };
+        };
+        /**
+         * @function 判断是否处于小程序环境内
+         */
+        var device_inMiniProgramsEnvironment = function () {
+            var inMiniPrograms = false;
+            if (/(micromessenger|webbrowser|wechatdevtools)/.test(navigator.userAgent.toLocaleLowerCase())) {
+                new Promise(function (res) {
+                    res(tools_loadWechatJssdk());
+                }).then(function (results) {
+                    if (results) {
+                        try {
+                            wx && wx.miniProgram && wx.miniProgram.getEnv(function (res) {
+                                inMiniPrograms = res.miniProgram
+                            })
+                        } catch (e) {
+                            system_warning('current not in a miniprogram environment');
+                        }
+                    } else {
+                        system_warning('system error,failed to load JSSDK successfully');
+                    }
+                })
+            }
+
+            return inMiniPrograms;
+        };
+        /**
+         * [sensroData 根据不同功能执行不同的代码]
+         * @type {Array}
+         */
+        var data_sensroData = {
+            product: function (obj) {
+                return {
+                    OP_code: obj.productId ? obj.productId : '',
+                    commodity_sku: obj.skuId ? obj.skuId : '',
+                    campaign_to_pagetype: 'product_detail'
+                };
+
+            },
+            brand: function (obj) {
+                return {
+                    branden: obj.branden ? obj.branden : '',
+                    campaign_to_pagetype: 'brand_list'
+                };
+
+            },
+            brandStory: function (obj) {
+                return {
+                    brandstoryen: obj.branden ? obj.branden : '',
+                    campaign_to_pagetype: 'brand_story'
+                };
+
+            }
+        };
+        var link_jumpData = {
+            product: function (config) {
+                if (!config.product.productId) {
+                    system_warning('productId cannot be empty');
+                    return false;
+                }
+                var sku = config.product.skuId && config.product.skuId.length > 0 ? config.product.skuId : null;
+                return {
+                    iOS: `sephora://product?productid=${config.product.productId}${sku ? `&skuid=${sku}` : ''}`,
+                    Android: `sephora://product?productid=${config.product.productId}${sku ? `&skuid=${sku}` : ''}`,
+                    miniProgram: `/pages/productDetail?productId=${config.product.productId}${sku ? `&skuId=${sku}` : ''}`,
+                    web: `https://m.sephora.cn/product/${config.product.productId}.html${sku ? `?sku=${sku}` : ''}`
+                };
+
+            },
+            brand: function (config) {
+                if (!config.brand.brandId) {
+                    system_warning('brandId cannot be empty');
+                    return false;
+                }
+                var brandEN = config.brand.branden && config.brand.branden.toLocaleLowerCase();
+                var brandID = config.brand.brandId;
+                return {
+                    iOS: `sephora://brand?id=${brandID}`,
+                    Android: `sephora://brand?id=${brandID}`,
+                    miniProgram: `pages/products/sortResult?type=brand&id=${brandID}`,
+                    web: `https://m.sephora.cn/brand/${brandEN}-${brandID}/`
+                };
+            },
+            brandStory: function (config) {
+                if (!config.brandStory.brandId) {
+                    system_warning('brandId cannot be empty');
+                    return false;
+                }
+                var brandEN = config.brandStory.branden && config.brandStory.branden.toLocaleLowerCase();
+                var brandID = config.brandStory.brandId;
+                var storyUrl = config.brandStory.storyUrl;
+                return {
+                    iOS: `https://m.sephora.cn/brand/story-${brandEN}-${brandID}/`,
+                    Android: `https://m.sephora.cn/brand/story-${brandEN}-${brandID}/`,
+                    miniProgram: `pages/webView?url=${storyUrl}`,
+                    web: `https://m.sephora.cn/brand/story-${brandEN}-${brandID}/`
+                };
+            }
+        };
+        /**
+        * @function 在小程序环境内执行逻辑时，加载微信JSSDK 
+        */
+        var tools_loadWechatJssdk = function () {
+            if (window && window.wx && window.wx.miniProgram) {
+                return true;
+            } else {
+                return tools_loadScript(window, document, 'script', 'https://res.wx.qq.com/open/js/jweixin-1.3.2.js', function (callback) {
+                    return callback;
+                })
+            }
+        };
+        /**
+         * @function  判断当前所处的环境
+         */
+        var device_getDeviceEnvironment = function (config, debug) {
+            var userAgent = window.navigator.userAgent;
+            var tagString = config.agreement || 'sephora/app';
+            var opt = debug === false ? false : true;
+            if (userAgent.indexOf(tagString, userAgent.length - tagString.length) != -1) {
+                var regex = config.regex || /^(\w+\/[0-9.]{1,9}) \((\w+|\w+ \w+); (\w+ [0-9.]{1,9}); (Scale\/[0-9.]{1,4})\) .* sephora\/app$/;
+                var result = userAgent.match(regex);
+                console.log('userAgent--', userAgent)
+                console.log('result--', result)
+                var deveiceInfo = {
+                    type: result[2],
+                    scale: result[4].split('/')[1],
+                    name: result[3].split(' ')[0],
+                    version: result[3].split(' ')[1],
+                    applicationName: result[1].split('/')[0],
+                    applicationVersion: result[1].split('/')[1],
+                }
+                return deveiceInfo;
+            } else {
+                opt && system_warning('not in app WebView environment');
+            }
+        };
+        // 共有方法 对外暴露
+        var JsInvoke = function (config) { };
+
+        /**
+         * @function 获取设备的信息（ 设备类型、设备的缩放比例、设备的应用名称、设备的应用版本、设备的系统名称、设备的系统版本）
+         * @param config == object 
+         * @param config =={
+         *        agreement:'sephora/app',  //默认的app协议，默认值为'sephora/app'
+         *        regex: /^(\w+\/[0-9.]{3,9}) \((\w+|\w+ \w+); (\w+ [0-9.]{3,9}); (Scale\/[0-9.]{3,4})\) .* sephora\/app$/ //默认的app正则判断，默认值为/^(\w+\/[0-9.]{3,9}) \((\w+|\w+ \w+); (\w+ [0-9.]{3,9}); (Scale\/[0-9.]{3,4})\) .* sephora\/app$/
+         * }
+         */
+        JsInvoke.prototype.getDeviceInfo = function (config) {
+            if (verify_getClient()) {
+                return device_getDeviceEnvironment(config);
+            } else {
+                system_warning('currently not in browser environment');
+            }
+        }
+        JsInvoke.prototype.getSensor = function (config) {
+            try {
+                if (!verify_typeObject(config)) return console.warn('config parameter cannot be empty');
+                var SensorClick = window.sa && window.sa.track
+                if (verify_getClient() && verify_typeFunction(SensorClick)) {
+                    var opt = Object.keys(config)[0]
+                    var value = {
+                        OP_code: '',
+                        commodity_sku: '',
+                        branden: '',
+                        brandstoryen: '',
+                        campaign_to_pagetype: '',
+                        productcn: ''
+                    };
+                    if (data_sensroData[opt] && data_sensroData[opt](config[opt])) {
+                        SensorClick('CampaignClick', data_sensroData[opt](config[opt]));
+                    }
+                }
+                this.jumpPage(config);
+
+            } catch (e) {
+                console.error(e);
+                console.error(`Sensor error`);
+            }
+
+            return this;
+        };
+        /**
+         * @function 实现不同渠道跳转 （IOS Android web  miniProgram 跳转至商品详情页、品牌页、品牌故事页）
+         * 
+         */
+        JsInvoke.prototype.jumpPage = function (config) {
+            if (!verify_typeObject(config)) return console.warn('config parameter cannot be empty');
+            var opt = Object.keys(config) && Object.keys(config)[0];
+            if (!link_jumpData[opt]) return console.warn('Can not find key ' + opt);
+            var deveiceInfo = device_getDeviceEnvironment(config, false);
+            var deveice = 'web';
+            var value = link_jumpData[opt](config);
+            if (deveiceInfo && deveiceInfo.name) {
+                console.log('deveiceInfo--', deveiceInfo)
+                deveice = deveiceInfo.name
+            } else if (device_inMiniProgramsEnvironment()) {
+                try {
+                    wx && wx.miniProgram && wx.miniProgram.navigateTo({ url: value['miniProgram'] });
+                } catch (e) {
+                    system_warning('system error, failed to skip to commodity details page')
+                }
+            }
+            console.log('link--', link_jumpData[opt](config)[deveice])
+            window.location.href = link_jumpData[opt](config)[deveice]
+        };
+        //返回构造函数
+        return JsInvoke;
+    })()
+
+
+// new SEPHORA_JSINVOKE().getDeviceInfo({});
+// new SEPHORA_JSINVOKE().getSensor({
+//     product: {
+//         'productId': '984087',
+//         'skuId': '',
+//         'productcn': ''
+//     }
+// });
+// new SEPHORA_JSINVOKE().getSensor({
+//     brand: {
+//         'brandId': '184',
+//         'branden': 'dior'
+//     }
+// });
+// new SEPHORA_JSINVOKE().getSensor({
+//     brandStory: {
+//         'brandId': '1',
+//         'branden': 'sephoracollection',
+//         'storyUrl':''
+//     }
+// });
+
+</script>
+
+<body>
+    <div class="content">
+        <a
+            href="javascript:new SEPHORA_JSINVOKE().getSensor({product:{'productId':'986941','skuId':'','productcn':''}});">
+            <img src="https://ssl1.sephorastatic.cn/wcsfrontend/campaign/mobile_img/2019/10/kits20191010/images/kits20191010_03.jpg"
+                alt="丝芙兰小菲盒">
+        </a>
+    </div>
+</body>
+
+</html>
